@@ -16,7 +16,7 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { PRODUCT_SERVICE } from 'src/config';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { PaginationDto } from 'src/common';
-import { firstValueFrom } from 'rxjs';
+import { catchError, firstValueFrom } from 'rxjs';
 
 @Controller('products')
 export class ProductsController {
@@ -57,6 +57,19 @@ export class ProductsController {
     }
   }
 
+  @Get('by-name')
+  async findOneWithName(@Query() name: string) {
+    try {
+      const product = await firstValueFrom(
+        this.productsClient.send({ cmd: 'find_one_product_by_name' }, name),
+      );
+
+      return product;
+    } catch (error) {
+      throw new RpcException(error);
+    }
+  }
+
   @Get(':id')
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     try {
@@ -72,15 +85,23 @@ export class ProductsController {
 
   @Patch(':id')
   async update(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() updateProductDto: UpdateProductDto,
   ) {
+    return this.productsClient
+      .send({ cmd: 'update_product' }, { id, ...updateProductDto })
+      .pipe(
+        catchError((err) => {
+          throw new RpcException(err);
+        }),
+      );
+  }
+
+  @Delete('soft-remove/:id')
+  async remove(@Param('id') id: string) {
     try {
       const product = await firstValueFrom(
-        this.productsClient.send(
-          { cmd: 'update_product' },
-          { id, ...updateProductDto },
-        ),
+        this.productsClient.send({ cmd: 'delete_product' }, { id }),
       );
       return product;
     } catch (error) {
@@ -88,8 +109,15 @@ export class ProductsController {
     }
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return 'Returns a message indicating the result of the deletion';
+  @Delete('remove/:id')
+  async hardRemove(@Param('id') id: string) {
+    try {
+      const product = await firstValueFrom(
+        this.productsClient.send({ cmd: 'hard_delete_product' }, { id }),
+      );
+      return product;
+    } catch (error) {
+      throw new RpcException(error);
+    }
   }
 }
